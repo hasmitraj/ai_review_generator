@@ -20,9 +20,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = session.shop;
 
   try {
-    const hasActiveSubscription = await checkActiveSubscription(admin, shop);
+    const subscriptionStatus = await checkActiveSubscription(admin, shop);
 
-    if (!hasActiveSubscription) {
+    if (!subscriptionStatus.hasAccess) {
       // Create subscription and get confirmation URL
       try {
         const returnUrl = new URL(request.url).origin + "/app";
@@ -32,6 +32,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           hasSubscription: false,
           confirmationUrl,
           usageCount: 0,
+          isTrial: false,
         };
       } catch (error) {
         // If billing API is not available (e.g., in development), allow access
@@ -41,11 +42,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           return {
             hasSubscription: true, // Allow access in development
             usageCount,
+            isTrial: false,
           };
         } catch {
           return {
             hasSubscription: true,
             usageCount: 0,
+            isTrial: false,
           };
         }
       }
@@ -57,11 +60,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return {
         hasSubscription: true,
         usageCount,
+        isTrial: subscriptionStatus.isTrial,
+        daysRemaining: subscriptionStatus.daysRemaining,
       };
     } catch {
       return {
         hasSubscription: true,
         usageCount: 0,
+        isTrial: subscriptionStatus.isTrial,
+        daysRemaining: subscriptionStatus.daysRemaining,
       };
     }
   } catch (error) {
@@ -72,11 +79,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       return {
         hasSubscription: true, // Allow access in development
         usageCount,
+        isTrial: false,
       };
     } catch {
       return {
         hasSubscription: true,
         usageCount: 0,
+        isTrial: false,
       };
     }
   }
@@ -86,14 +95,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // Check for active subscription before processing
+  // Check for active subscription or valid trial before processing
   try {
-    const hasActiveSubscription = await checkActiveSubscription(admin, shop);
+    const subscriptionStatus = await checkActiveSubscription(admin, shop);
 
-    if (!hasActiveSubscription) {
+    if (!subscriptionStatus.hasAccess) {
       return {
         reply: "",
-        error: "Subscription required",
+        error: "Subscription required. Your trial has expired or no active subscription found.",
       };
     }
   } catch (error) {

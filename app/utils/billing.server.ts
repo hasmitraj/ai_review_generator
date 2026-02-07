@@ -32,7 +32,7 @@ export async function createSubscription(
       }`,
     {
       variables: {
-        name: "AI Review Reply Generator – Starter",
+        name: "pro_monthly",
         lineItems: [
           {
             plan: {
@@ -47,7 +47,7 @@ export async function createSubscription(
           },
         ],
         returnUrl,
-        trialDays: 7,
+        trialDays: 14,
       },
     },
   );
@@ -77,10 +77,16 @@ export async function createSubscription(
  * @param shop - Shop domain
  * @returns True if the shop has an active subscription, false otherwise
  */
+/**
+ * Checks if a shop has an active subscription or valid trial
+ * @param admin - Shopify Admin API context with graphql method
+ * @param shop - Shop domain
+ * @returns Object with hasAccess (boolean) and isTrial (boolean)
+ */
 export async function checkActiveSubscription(
   admin: { graphql: (query: string, options?: { variables?: Record<string, unknown> }) => Promise<Response> },
   shop: string,
-): Promise<boolean> {
+): Promise<{ hasAccess: boolean; isTrial: boolean; daysRemaining?: number }> {
   const response = await admin.graphql(
     `#graphql
       query currentAppInstallation {
@@ -89,6 +95,9 @@ export async function checkActiveSubscription(
             id
             status
             name
+            createdAt
+            trialDays
+            currentPeriodEnd
           }
         }
       }`,
@@ -98,13 +107,44 @@ export async function checkActiveSubscription(
   const subscriptions =
     responseJson.data?.currentAppInstallation?.activeSubscriptions || [];
 
-  // Check if there's an active subscription with the app name
-  const activeSubscription = subscriptions.find(
-    (sub: { status: string; name: string }) =>
-      sub.status === "ACTIVE" &&
-      sub.name === "AI Review Reply Generator – Starter",
+  // Find subscription with "pro_monthly" key
+  const subscription = subscriptions.find(
+    (sub: { name: string }) => sub.name === "pro_monthly",
   );
 
-  return !!activeSubscription;
+  if (!subscription) {
+    return { hasAccess: false, isTrial: false };
+  }
+
+  // Check if subscription is ACTIVE (paid)
+  if (subscription.status === "ACTIVE") {
+    return { hasAccess: true, isTrial: false };
+  }
+
+  // Check if in trial period
+  if (subscription.status === "ACCEPTED" || subscription.status === "TRIAL") {
+    if (!subscription.createdAt) {
+      // If createdAt is not available, assume trial is valid (fallback)
+      return { hasAccess: true, isTrial: true };
+    }
+
+    const createdAt = new Date(subscription.createdAt);
+    const trialDays = subscription.trialDays || 14;
+    const trialEndDate = new Date(createdAt);
+    trialEndDate.setDate(trialEndDate.getDate() + trialDays);
+    const now = new Date();
+
+    if (now <= trialEndDate) {
+      const daysRemaining = Math.ceil(
+        (trialEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      return { hasAccess: true, isTrial: true, daysRemaining };
+    } else {
+      // Trial expired
+      return { hasAccess: false, isTrial: false };
+    }
+  }
+
+  return { hasAccess: false, isTrial: false };
 }
 
