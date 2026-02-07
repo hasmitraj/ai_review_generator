@@ -2,7 +2,7 @@
 
 client_id = "13b69f395af5b138c1c3d80a669d0a0e"
 name = "AI Review Reply Generator"
-application_url = "https://example.com"
+application_url = "https://ai-review-generator-1.onrender.com/"
 embedded = true
 
 [build]
